@@ -1,0 +1,129 @@
+{
+  "name": "Flipkart (Affiliate API) -> Structured Product Rows",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "1",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        260,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "FK_AFFILIATE_ID",
+              "value": "YOUR_AFFILIATE_ID"
+            },
+            {
+              "name": "FK_AFFILIATE_TOKEN",
+              "value": "YOUR_AFFILIATE_TOKEN"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2",
+      "name": "Set Credentials",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        480,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://affiliate-api.flipkart.net/affiliate/offers/v1/dotd/json",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Fk-Affiliate-Id",
+              "value": "={{$json.FK_AFFILIATE_ID}}"
+            },
+            {
+              "name": "Fk-Affiliate-Token",
+              "value": "={{$json.FK_AFFILIATE_TOKEN}}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "responseFormat": "json"
+          },
+          "timeout": 60000
+        }
+      },
+      "id": "3",
+      "name": "Flipkart DOTD (Affiliate API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        720,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const out = [];\n\n// Flipkart DOTD response usually contains a list of deals grouped by categories.\n// We'll safely walk the JSON and extract product-level rows.\n\nconst data = $input.first().json;\n\n// Try common shapes defensively\nconst groups =\n  data?.dotdList ||\n  data?.dotd ||\n  data?.categories ||\n  data?.allOffersList ||\n  [];\n\nfunction pushProduct(p, categoryName) {\n  if (!p) return;\n\n  // Common fields found in Flipkart affiliate responses\n  const title = p?.title || p?.productTitle || p?.name;\n  const url = p?.url || p?.productUrl || p?.productUrl || p?.productUrl || p?.productUrl;\n  const image = p?.imageUrls?.['200x200'] || p?.imageUrl || p?.image;\n\n  const sellingPrice = p?.price?.amount || p?.sellingPrice?.amount || p?.sellingPrice;\n  const mrp = p?.mrp?.amount || p?.maximumRetailPrice?.amount || p?.mrp;\n  const discount = p?.discountPercentage || p?.discount;\n\n  out.push({\n    category: categoryName || p?.category || '',\n    title: title || '',\n    sellingPrice: sellingPrice ?? '',\n    mrp: mrp ?? '',\n    discount: discount ?? '',\n    url: url || '',\n    image: image || ''\n  });\n}\n\nfor (const g of groups) {\n  const categoryName = g?.title || g?.name || g?.category || '';\n  const products = g?.products || g?.productInfoList || g?.items || [];\n\n  // Some responses nest productInfo inside productBaseInfoV1\n  for (const item of products) {\n    const p = item?.productBaseInfoV1 || item?.productInfo?.productBaseInfoV1 || item;\n    pushProduct(p, categoryName);\n  }\n\n  // Sometimes the group itself is a product list\n  if (Array.isArray(g) && g.length) {\n    for (const p of g) pushProduct(p, '');\n  }\n}\n\n// If nothing matched, try one more generic attempt\nif (!out.length && Array.isArray(data?.products)) {\n  for (const p of data.products) pushProduct(p, '');\n}\n\nreturn out.map(r => ({ json: r }));"
+      },
+      "id": "4",
+      "name": "Normalize to Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        980,
+        220
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Credentials",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Credentials": {
+      "main": [
+        [
+          {
+            "node": "Flipkart DOTD (Affiliate API)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flipkart DOTD (Affiliate API)": {
+      "main": [
+        [
+          {
+            "node": "Normalize to Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionTimeout": 3600,
+    "saveExecutionProgress": true
+  },
+  "versionId": "1"
+}
